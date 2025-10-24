@@ -1,80 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import ManualInputForm from '@/components/ManualInputForm';
-import TheaterManager from '@/components/TheaterManager';
-import MovieManager from '@/components/MovieManager';
 import type { SchedulePattern, MovieTheaterSchedule, Theater } from '@/types/movie';
 
-const STORAGE_KEY = 'movie-scheduler-custom-theaters';
-
-interface MovieData {
-  id: string;
-  title: string;
-  theaters: {
-    theater: Theater;
-    showtimes: string[];
-    duration: number;
-  }[];
-}
-
 export default function Home() {
-  const [movies, setMovies] = useState<MovieData[]>([]);
+  const [movieAData, setMovieAData] = useState<any>(null);
+  const [movieBData, setMovieBData] = useState<any>(null);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [patterns, setPatterns] = useState<SchedulePattern[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [customTheaters, setCustomTheaters] = useState<Theater[]>([]);
 
-  // LocalStorageからカスタム映画館を読み込み
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const theaters = JSON.parse(stored);
-        setCustomTheaters(theaters);
-      }
-    } catch (error) {
-      console.error('Failed to load custom theaters:', error);
-    }
-  }, []);
-
-  // カスタム映画館をLocalStorageに保存
-  const saveToStorage = (theaters: Theater[]) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(theaters));
-    } catch (error) {
-      console.error('Failed to save custom theaters:', error);
-    }
-  };
-
-  const handleAddTheater = (theater: Theater) => {
-    const newTheaters = [...customTheaters, theater];
-    setCustomTheaters(newTheaters);
-    saveToStorage(newTheaters);
-  };
-
-  const handleRemoveTheater = (theaterId: string) => {
-    const newTheaters = customTheaters.filter(t => t.id !== theaterId);
-    setCustomTheaters(newTheaters);
-    saveToStorage(newTheaters);
-  };
-
-  const handleAddMovie = (data: any) => {
-    const newMovie: MovieData = {
-      id: `movie-${Date.now()}`,
-      title: data.title,
-      theaters: data.theaters,
-    };
-    setMovies([...movies, newMovie]);
-    setError('');
-  };
-
-  const handleRemoveMovie = (movieId: string) => {
-    setMovies(movies.filter(m => m.id !== movieId));
-  };
-
-  const convertToSchedules = (data: MovieData): MovieTheaterSchedule[] => {
+  const convertToSchedules = (data: any): MovieTheaterSchedule[] => {
     return data.theaters.map((t: any) => ({
       movie: {
         title: data.title,
@@ -90,8 +28,8 @@ export default function Home() {
   };
 
   const handleSearch = async () => {
-    if (movies.length < 2) {
-      setError('最低2つの映画を登録してください');
+    if (!movieAData || !movieBData) {
+      setError('両方の映画を登録してください');
       return;
     }
 
@@ -100,44 +38,27 @@ export default function Home() {
     setPatterns([]);
 
     try {
-      // 全ての映画の組み合わせでパターンを生成
-      const allPatterns: SchedulePattern[] = [];
-      
-      for (let i = 0; i < movies.length; i++) {
-        for (let j = i + 1; j < movies.length; j++) {
-          const schedulesA = convertToSchedules(movies[i]);
-          const schedulesB = convertToSchedules(movies[j]);
+      const schedulesA = convertToSchedules(movieAData);
+      const schedulesB = convertToSchedules(movieBData);
 
-          const response = await fetch('/api/patterns', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              schedulesA,
-              schedulesB,
-              date,
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error('スケジュールの取得に失敗しました');
-          }
-
-          const data = await response.json();
-          allPatterns.push(...data.patterns);
-        }
-      }
-
-      // 実行可能なパターンを優先してソート
-      allPatterns.sort((a, b) => {
-        if (a.feasible !== b.feasible) {
-          return a.feasible ? -1 : 1;
-        }
-        return a.totalTime - b.totalTime;
+      const response = await fetch('/api/patterns', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          schedulesA,
+          schedulesB,
+          date,
+        }),
       });
 
-      setPatterns(allPatterns.slice(0, 20));
+      if (!response.ok) {
+        throw new Error('スケジュールの取得に失敗しました');
+      }
+
+      const data = await response.json();
+      setPatterns(data.patterns);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'エラーが発生しました');
     } finally {
@@ -152,65 +73,90 @@ export default function Home() {
           🎬 映画スケジューラー
         </h1>
         <p className="text-center text-gray-600 mb-8">
-          複数の映画を連続で見るための最適なスケジュールを提案します
+          2つの映画を連続で見るための最適なスケジュールを提案します
         </p>
 
         {/* 説明 */}
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-6 mb-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-3">✨ 機能一覧</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-3">✨ 新機能：手動入力 + 実際の移動時間</h2>
           <div className="grid md:grid-cols-2 gap-4 text-sm">
             <div>
               <h3 className="font-semibold text-gray-800 mb-2">✅ 動作する機能</h3>
               <ul className="space-y-1 text-gray-700">
-                <li>• <strong>複数映画対応</strong>：2本以上の映画を登録可能</li>
-                <li>• <strong>カスタム映画館</strong>：好きな映画館を追加できる</li>
+                <li>• 上映時間を手動で入力</li>
                 <li>• Google Maps APIで実際の移動時間を計算</li>
-                <li>• 全ての組み合わせで最適なスケジュールを自動生成</li>
+                <li>• 複数劇場・複数上映時間に対応</li>
+                <li>• 最適なスケジュールパターンを自動生成</li>
               </ul>
             </div>
             <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
               <p className="text-xs text-yellow-800">
-                <strong>💡 使い方:</strong><br/>
-                1. カスタム映画館を追加（または既存のTOHOシネマズを使用）<br/>
-                2. 見たい映画を2本以上登録<br/>
-                3. 「最適スケジュールを検索」で全パターンを表示！
+                <strong>💡 使い方:</strong> TOHOシネマズの公式サイトで映画の上映時間を確認し、
+                下のフォームに入力してください。移動時間はGoogle Maps APIで自動計算されます！
               </p>
             </div>
           </div>
         </div>
 
-        {/* カスタム映画館管理 */}
-        <div className="mb-8">
-          <TheaterManager
-            customTheaters={customTheaters}
-            onAddTheater={handleAddTheater}
-            onRemoveTheater={handleRemoveTheater}
+        {/* 映画入力フォーム */}
+        <div className="grid md:grid-cols-2 gap-6 mb-8">
+          <ManualInputForm
+            movieLabel="映画A"
+            onSubmit={(data) => {
+              setMovieAData(data);
+              setError('');
+            }}
+          />
+          <ManualInputForm
+            movieLabel="映画B"
+            onSubmit={(data) => {
+              setMovieBData(data);
+              setError('');
+            }}
           />
         </div>
 
-        {/* 登録済み映画一覧 */}
-        {movies.length > 0 && (
-          <MovieManager
-            movies={movies}
-            onAddMovie={handleAddMovie}
-            onRemoveMovie={handleRemoveMovie}
-          />
+        {/* 登録済み情報表示 */}
+        {(movieAData || movieBData) && (
+          <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h3 className="font-bold text-gray-900 mb-4">登録済みの映画</h3>
+            <div className="grid md:grid-cols-2 gap-4">
+              {movieAData && (
+                <div className="border border-green-200 bg-green-50 rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <h4 className="font-semibold text-gray-900">映画A: {movieAData.title}</h4>
+                    <button
+                      onClick={() => setMovieAData(null)}
+                      className="text-xs text-red-600 hover:text-red-800"
+                    >
+                      削除
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-600">上映時間: {movieAData.theaters[0].duration}分</p>
+                  <p className="text-sm text-gray-600">劇場数: {movieAData.theaters.length}館</p>
+                </div>
+              )}
+              {movieBData && (
+                <div className="border border-green-200 bg-green-50 rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <h4 className="font-semibold text-gray-900">映画B: {movieBData.title}</h4>
+                    <button
+                      onClick={() => setMovieBData(null)}
+                      className="text-xs text-red-600 hover:text-red-800"
+                    >
+                      削除
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-600">上映時間: {movieBData.theaters[0].duration}分</p>
+                  <p className="text-sm text-gray-600">劇場数: {movieBData.theaters.length}館</p>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
-        {/* 映画入力フォーム */}
-        <div className="mb-8">
-          <div className="bg-white rounded-lg shadow-md p-6 border-2 border-green-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">🎬 新しい映画を追加</h3>
-            <ManualInputForm
-              movieLabel={`映画${String.fromCharCode(65 + movies.length)}`}
-              customTheaters={customTheaters}
-              onSubmit={handleAddMovie}
-            />
-          </div>
-        </div>
-
         {/* 日付選択と検索ボタン */}
-        {movies.length >= 2 && (
+        {movieAData && movieBData && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-8">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1">
@@ -254,9 +200,9 @@ export default function Home() {
               </span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {patterns.slice(0, 10).map((pattern, index) => (
+              {patterns.slice(0, 10).map((pattern) => (
                 <div
-                  key={`pattern-${index}-${pattern.id}`}
+                  key={pattern.id}
                   className={`bg-white rounded-lg shadow-md p-6 border-2 ${
                     pattern.feasible
                       ? 'border-green-200 hover:border-green-400'
@@ -265,7 +211,7 @@ export default function Home() {
                 >
                   <div className="flex justify-between items-start mb-4">
                     <h3 className="font-bold text-lg text-gray-900">
-                      パターン #{index + 1}
+                      パターン #{pattern.id}
                     </h3>
                     {pattern.feasible ? (
                       <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">
